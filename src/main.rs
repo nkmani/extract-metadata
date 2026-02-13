@@ -23,7 +23,7 @@ struct Args {
     verbose: bool,
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Debug, PartialEq)]
 struct Metadata {
     file_name: String,
     stage_size: (u32, u32),
@@ -81,15 +81,19 @@ fn extract_metadata(file_name: &str, format: &str) -> String {
         frame_rate: swf.header.frame_rate().to_f32() as u32,
     };
 
+    format_metadata(&metadata, format)
+}
+
+fn format_metadata(metadata: &Metadata, format: &str) -> String {
     if format == "json" {
-        return serde_json::to_string(&metadata).unwrap();
+        serde_json::to_string(metadata).unwrap()
     } else if format == "yaml" {
-        return serde_yaml::to_string(&metadata).unwrap();
+        serde_yaml::to_string(metadata).unwrap()
     } else {
-        return format!(
+        format!(
             "File: {}\nStage Size: {:?}\nNumber of Frames: {}\nFrame Rate: {}",
             metadata.file_name, metadata.stage_size, metadata.no_of_frames, metadata.frame_rate
-        );
+        )
     }
 }
 
@@ -147,5 +151,147 @@ fn save_metadata(output_path: &PathBuf, content: &str, verbose: bool) {
         Err(e) => {
             eprintln!("Error creating file {:?}: {}", output_path, e);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Helper function to create test metadata
+    fn create_test_metadata() -> Metadata {
+        Metadata {
+            file_name: "test.swf".to_string(),
+            stage_size: (800, 600),
+            no_of_frames: 100,
+            frame_rate: 30,
+        }
+    }
+
+    #[test]
+    fn test_metadata_to_json() {
+        let metadata = create_test_metadata();
+        let result = format_metadata(&metadata, "json");
+
+        // Verify it's valid JSON
+        assert!(result.contains("\"file_name\":\"test.swf\""));
+        assert!(result.contains("\"stage_size\":[800,600]"));
+        assert!(result.contains("\"no_of_frames\":100"));
+        assert!(result.contains("\"frame_rate\":30"));
+
+        // Verify it can be parsed back
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["file_name"], "test.swf");
+        assert_eq!(parsed["stage_size"][0], 800);
+        assert_eq!(parsed["stage_size"][1], 600);
+    }
+
+    #[test]
+    fn test_metadata_to_yaml() {
+        let metadata = create_test_metadata();
+        let result = format_metadata(&metadata, "yaml");
+
+        // Verify YAML format
+        assert!(result.contains("file_name: test.swf"));
+        assert!(result.contains("stage_size:"));
+        assert!(result.contains("- 800"));
+        assert!(result.contains("- 600"));
+        assert!(result.contains("no_of_frames: 100"));
+        assert!(result.contains("frame_rate: 30"));
+    }
+
+    #[test]
+    fn test_metadata_to_text() {
+        let metadata = create_test_metadata();
+        let result = format_metadata(&metadata, "text");
+
+        // Verify text format
+        assert!(result.contains("File: test.swf"));
+        assert!(result.contains("Stage Size: (800, 600)"));
+        assert!(result.contains("Number of Frames: 100"));
+        assert!(result.contains("Frame Rate: 30"));
+    }
+
+    #[test]
+    fn test_output_path_generation_json() {
+        let input = PathBuf::from("test.swf");
+        let output = input.with_extension("swf.json");
+        assert_eq!(output.to_str().unwrap(), "test.swf.json");
+    }
+
+    #[test]
+    fn test_output_path_generation_yaml() {
+        let input = PathBuf::from("test.swf");
+        let output = input.with_extension("swf.yaml");
+        assert_eq!(output.to_str().unwrap(), "test.swf.yaml");
+    }
+
+    #[test]
+    fn test_output_path_generation_text() {
+        let input = PathBuf::from("test.swf");
+        let output = input.with_extension("swf.text");
+        assert_eq!(output.to_str().unwrap(), "test.swf.text");
+    }
+
+    #[test]
+    fn test_output_path_with_directory() {
+        let input = PathBuf::from("/path/to/animation.swf");
+        let output = input.with_extension("swf.json");
+        assert_eq!(output.to_str().unwrap(), "/path/to/animation.swf.json");
+    }
+
+    #[test]
+    fn test_metadata_equality() {
+        let metadata1 = create_test_metadata();
+        let metadata2 = Metadata {
+            file_name: "test.swf".to_string(),
+            stage_size: (800, 600),
+            no_of_frames: 100,
+            frame_rate: 30,
+        };
+        assert_eq!(metadata1, metadata2);
+    }
+
+    #[test]
+    fn test_metadata_inequality() {
+        let metadata1 = create_test_metadata();
+        let metadata2 = Metadata {
+            file_name: "different.swf".to_string(),
+            stage_size: (800, 600),
+            no_of_frames: 100,
+            frame_rate: 30,
+        };
+        assert_ne!(metadata1, metadata2);
+    }
+
+    #[test]
+    fn test_is_swf_extension_lowercase() {
+        let path = PathBuf::from("test.swf");
+        let ext = path.extension().unwrap().to_str().unwrap().to_lowercase();
+        assert_eq!(ext, "swf");
+    }
+
+    #[test]
+    fn test_is_swf_extension_uppercase() {
+        let path = PathBuf::from("test.SWF");
+        let ext = path.extension().unwrap().to_str().unwrap().to_lowercase();
+        assert_eq!(ext, "swf");
+    }
+
+    #[test]
+    fn test_is_swf_extension_mixed_case() {
+        let path = PathBuf::from("test.SwF");
+        let ext = path.extension().unwrap().to_str().unwrap().to_lowercase();
+        assert_eq!(ext, "swf");
+    }
+
+    #[test]
+    fn test_format_metadata_default_to_text() {
+        let metadata = create_test_metadata();
+        let result = format_metadata(&metadata, "unknown_format");
+
+        // Should default to text format
+        assert!(result.contains("File: test.swf"));
+        assert!(result.contains("Stage Size: (800, 600)"));
     }
 }
